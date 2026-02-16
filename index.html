@@ -225,8 +225,7 @@
                         </div>
                     </div>
                     <div class="mt-4">
-                        <a :href="'https://www.dianping.com/search/keyword/7/0_' + encodeURIComponent(selectedItem.name)"
-                            target="_blank"
+                        <a href="javascript:void(0)" @click="openDianping(selectedItem.name)"
                             class="flex items-center justify-center bg-orange-50 text-orange-800 py-3 rounded-xl font-medium border border-orange-200 active:bg-orange-100 transition">
                             📸 在大众点评查看菜品图片
                         </a>
@@ -616,12 +615,31 @@
                     }
                 };
 
+                // 大众点评：先尝试唤起App，失败后跳转网页
+                const openDianping = (name) => {
+                    const keyword = encodeURIComponent(name);
+                    const appUrl = `dianping://searchshoplist?keyword=${keyword}&cityId=7`;
+                    const webUrl = `https://www.dianping.com/search/keyword/7/0_${keyword}`;
+
+                    const start = Date.now();
+                    const iframe = document.createElement('iframe');
+                    iframe.style.display = 'none';
+                    iframe.src = appUrl;
+                    document.body.appendChild(iframe);
+
+                    setTimeout(() => {
+                        document.body.removeChild(iframe);
+                        // If still on this page after 800ms, app didn't open -> fallback to web
+                        if (Date.now() - start < 1500) {
+                            window.location.href = webUrl;
+                        }
+                    }, 800);
+                };
+
                 // 核心修复：导航改为搜索「店名」而非「地址」，并优化高德唤起参数
                 const getMapUrl = (item) => {
-                    // 去除店名中的括号备注，提高搜索成功率 (如 "榕意 (越秀店)" -> "榕意 越秀店")
                     const cleanName = item.name.replace(/[()]/g, ' ');
                     const query = `广州 ${cleanName}`;
-                    // 使用 callnative=1 尝试唤起 App
                     return `https://uri.amap.com/search?keyword=${encodeURIComponent(query)}&src=mypage&callnative=1`;
                 };
 
@@ -629,7 +647,7 @@
                     list, selectedItem, searchQuery, filterDistrict, filterCuisine,
                     showFilterModal, filterType, currentOptions, hasFilters, filteredList,
                     loadingLocation, filterMichelin, filterOpenNow, filterTimeCategory,
-                    openDetail, closeDetail, toggleFilter, applyFilter, resetFilters, toggleMichelin, toggleOpenNow, getLocation, getMapUrl, getFilterTitle
+                    openDetail, closeDetail, toggleFilter, applyFilter, resetFilters, toggleMichelin, toggleOpenNow, getLocation, getMapUrl, getFilterTitle, openDianping
                 };
             },
             mounted() {
