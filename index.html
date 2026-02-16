@@ -52,7 +52,6 @@
         }
     </style>
 
-    <!-- PWA Support -->
     <link rel="manifest" href="manifest.json">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -140,8 +139,9 @@
                             企鹅推荐</span>
                         <span class="bg-gray-100 px-1.5 py-0.5 rounded">{{ item.cuisine }}</span>
                         <span class="bg-gray-100 px-1.5 py-0.5 rounded">{{ item.district }}</span>
-                        <span v-if="item.distance" class="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-medium">📍
-                            {{ item.distance }}km</span>
+                        <a v-if="item.distance" :href="getMapUrl(item)" @click.stop target="_blank"
+                            class="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-medium no-underline active:bg-blue-100 transition">📍
+                            {{ item.distance }}km</a>
                     </div>
 
                     <p class="text-xs text-gray-400 truncate flex items-center">
