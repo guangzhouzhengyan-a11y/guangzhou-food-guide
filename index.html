@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>广州饮食指南 2026</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=Inter:wght@400;500;600&display=swap"
+        rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f8f8;
+            font-family: 'Inter', -apple-system, Helvetica, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            overscroll-behavior-y: none;
+            /* 防止整体页面橡皮筋效果 */
+        }
+
+        .serif {
+            font-family: 'Noto Serif SC', serif;
+        }
+
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* 页面切换动画 */
+        .slide-enter-active,
+        .slide-leave-active {
+            transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        .slide-enter-from,
+        .slide-leave-to {
+            transform: translateX(100%);
+        }
+
+        /* 列表项按压效果 */
+        .active-press:active {
+            transform: scale(0.98);
+            background-color: #f9f9f9;
+            transition: all 0.1s;
+        }
+
+        /* 适配 iPhone 底部安全区 */
+        .safe-pb {
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+    </style>
+
+    <!-- PWA Support -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="广州食Guide">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <meta name="theme-color" content="#c41e24">
+</head>
+
+<body>
+
+    <div id="app" class="max-w-md mx-auto bg-white h-screen flex flex-col relative shadow-2xl overflow-hidden">
+
+        <div class="flex-1 flex flex-col bg-[#f9fafb] overflow-hidden">
+            <header class="bg-[#c41e24] text-white px-5 pt-12 pb-3 shrink-0 z-10 shadow-lg">
+                <div class="flex justify-between items-end mb-4">
+                    <div>
+                        <h1 class="text-2xl font-bold serif tracking-wider">广州饮食指南</h1>
+                        <p class="text-[10px] tracking-[0.2em] opacity-90">Guangzhou Food Guide 2026</p>
+                    </div>
+                    <button @click="getLocation"
+                        class="text-xs bg-black/20 backdrop-blur px-3 py-1.5 rounded-full flex items-center active:bg-black/40 transition border border-white/10">
+                        <span v-if="loadingLocation" class="animate-spin mr-1">⏳</span>
+                        {{ loadingLocation ? '定位中...' : '📍 离我最近' }}
+                    </button>
+                </div>
+
+                <div class="relative mb-3">
+                    <input type="text" v-model="searchQuery" placeholder="搜店名、地址 (如: 炳胜)..."
+                        class="w-full bg-white text-gray-800 text-sm py-2.5 pl-10 pr-4 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-red-900/20">
+                    <span class="absolute left-3 top-2.5 text-gray-400">🔍</span>
+                </div>
+
+                <div class="flex gap-2 overflow-x-auto hide-scrollbar pb-1">
+                    <button @click="toggleFilter('district')"
+                        class="text-xs px-3 py-1.5 rounded border border-white/30 whitespace-nowrap transition"
+                        :class="filterDistrict ? 'bg-white text-[#bd171e] font-bold' : 'bg-transparent text-white'">
+                        {{ filterDistrict || '全广州' }} ▾
+                    </button>
+                    <button @click="toggleFilter('cuisine')"
+                        class="text-xs px-3 py-1.5 rounded border border-white/30 whitespace-nowrap transition"
+                        :class="filterCuisine ? 'bg-white text-[#bd171e] font-bold' : 'bg-transparent text-white'">
+                        {{ filterCuisine || '全菜系' }} ▾
+                    </button>
+                    <button @click="toggleOpenNow"
+                        class="text-xs px-3 py-1.5 rounded border border-white/30 whitespace-nowrap transition"
+                        :class="filterOpenNow ? 'bg-white text-[#bd171e] font-bold' : 'bg-transparent text-white'">
+                        ⏰ 营业中
+                    </button>
+                    <button @click="toggleFilter('time')"
+                        class="text-xs px-3 py-1.5 rounded border border-white/30 whitespace-nowrap transition"
+                        :class="filterTimeCategory ? 'bg-white text-[#bd171e] font-bold' : 'bg-transparent text-white'">
+                        {{ filterTimeCategory || '用餐时间' }} ▾
+                    </button>
+                    <button @click="toggleMichelin"
+                        class="text-xs px-3 py-1.5 rounded border border-white/30 whitespace-nowrap transition"
+                        :class="filterMichelin ? 'bg-white text-[#bd171e] font-bold' : 'bg-transparent text-white'">
+                        🌟 米其林
+                    </button>
+                    <button @click="resetFilters" v-if="hasFilters"
+                        class="text-xs px-3 py-1.5 rounded bg-black/20 text-white whitespace-nowrap">
+                        ✕ 重置
+                    </button>
+                </div>
+            </header>
+
+            <main class="flex-1 overflow-y-auto p-4 pb-10 overscroll-contain">
+                <div v-for="item in filteredList" :key="item.name" @click="openDetail(item)"
+                    class="bg-white rounded-xl p-4 mb-3 shadow-[0_1px_6px_rgba(0,0,0,0.05)] border border-gray-100 active-press cursor-pointer">
+
+                    <div class="flex justify-between items-start mb-2">
+                        <h3 class="font-bold text-[17px] text-gray-900 serif leading-tight">{{ item.name }}</h3>
+                        <span
+                            class="text-[#bd171e] font-bold text-sm bg-red-50 px-2 py-0.5 rounded ml-2 whitespace-nowrap">¥{{
+                            item.price }}</span>
+                    </div>
+
+                    <div class="flex flex-wrap gap-2 text-[10px] text-gray-500 mb-2">
+                        <span v-if="item.stars" class="bg-[#c41e24] text-white px-1.5 py-0.5 rounded font-bold">
+                            {{ item.stars.includes('⭐') ? item.stars : '米其林推荐' }}
+                        </span>
+                        <span v-else-if="item.isMichelin"
+                            class="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded border border-gray-200">必比登</span>
+                        <span v-else
+                            class="bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-200 font-bold">🐧
+                            企鹅推荐</span>
+                        <span class="bg-gray-100 px-1.5 py-0.5 rounded">{{ item.cuisine }}</span>
+                        <span class="bg-gray-100 px-1.5 py-0.5 rounded">{{ item.district }}</span>
+                        <span v-if="item.distance" class="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-medium">📍
+                            {{ item.distance }}km</span>
+                    </div>
+
+                    <p class="text-xs text-gray-400 truncate flex items-center">
+                        <span class="mr-1">📍</span> {{ item.address }}
+                    </p>
+                    <p class="text-xs text-gray-400 truncate flex items-center mt-1">
+                        <span class="mr-1">⏰</span> {{ item.hours }}
+                    </p>
+                </div>
+
+                <div v-if="filteredList.length === 0"
+                    class="flex flex-col items-center justify-center mt-20 opacity-50">
+                    <div class="text-4xl mb-2">🍽️</div>
+                    <p class="text-sm">没有找到匹配的餐厅</p>
+                </div>
+            </main>
+        </div>
+
+        <transition name="slide">
+            <div v-if="selectedItem" class="fixed inset-0 z-50 bg-white flex flex-col h-full w-full">
+
+                <div
+                    class="shrink-0 bg-white/95 backdrop-blur-md p-4 flex justify-between items-center border-b border-gray-100 shadow-sm z-20 pt-12 pb-3">
+                    <button @click="closeDetail"
+                        class="w-9 h-9 flex items-center justify-center bg-gray-50 hover:bg-gray-100 rounded-full text-gray-600 transition">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M15 19l-7-7 7-7" />
+                        </svg>
+                    </button>
+                    <span class="font-bold text-sm text-gray-800">餐厅详情</span>
+                    <div class="w-9"></div>
+                </div>
+
+                <div class="flex-1 overflow-y-auto bg-white p-6 pb-24 overscroll-contain">
+                    <div class="text-center mb-8 mt-2">
+                        <div class="inline-flex items-center bg-[#c41e24] text-white text-xs px-3 py-1 rounded-full mb-3 font-bold shadow-sm"
+                            v-if="selectedItem.stars">
+                            MICHELIN GUIDE {{ selectedItem.stars }}
+                        </div>
+                        <h1 class="text-2xl font-bold serif text-gray-900 mb-2 leading-tight">{{ selectedItem.name }}
+                        </h1>
+                        <p class="text-gray-500 text-sm font-medium">{{ selectedItem.cuisine }} · {{
+                            selectedItem.district }}</p>
+                    </div>
+
+                    <div class="bg-gray-50 rounded-2xl p-5 mb-8 border border-gray-100 space-y-5">
+                        <div class="flex items-start">
+                            <span class="text-lg mr-4 mt-0.5">💰</span>
+                            <div>
+                                <p class="text-[10px] text-gray-400 uppercase tracking-wide font-bold mb-0.5">人均消费</p>
+                                <p class="font-bold text-gray-900 text-lg">¥{{ selectedItem.price }}</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start">
+                            <span class="text-lg mr-4 mt-0.5">⏰</span>
+                            <div>
+                                <p class="text-[10px] text-gray-400 uppercase tracking-wide font-bold mb-0.5">营业时间</p>
+                                <p class="text-sm text-gray-800 font-medium">{{ selectedItem.hours }}</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start">
+                            <span class="text-lg mr-4 mt-0.5">📍</span>
+                            <div class="flex-1">
+                                <p class="text-[10px] text-gray-400 uppercase tracking-wide font-bold mb-0.5">详细地址</p>
+                                <p class="text-sm text-gray-800 leading-relaxed">{{ selectedItem.address }}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-8">
+                        <h3 class="font-bold text-lg mb-4 flex items-center text-gray-900">
+                            <span class="w-1.5 h-5 bg-[#c41e24] mr-2 rounded-full"></span> 必吃推荐 ({{
+                            selectedItem.dishes.length }})
+                        </h3>
+                        <div class="flex flex-wrap gap-2">
+                            <span v-for="dish in selectedItem.dishes" :key="dish"
+                                class="bg-orange-50 text-orange-900 px-3 py-1.5 rounded-lg text-sm font-medium border border-orange-100">
+                                {{ dish }}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <a :href="'https://www.dianping.com/search/keyword/7/0_' + encodeURIComponent(selectedItem.name)"
+                            target="_blank"
+                            class="flex items-center justify-center bg-orange-50 text-orange-800 py-3 rounded-xl font-medium border border-orange-200 active:bg-orange-100 transition">
+                            📸 在大众点评查看菜品图片
+                        </a>
+                    </div>
+
+                    <div class="bg-blue-50 p-4 rounded-xl text-xs text-blue-900 leading-relaxed"
+                        v-if="selectedItem.note">
+                        <span class="font-bold block mb-1">💡 餐厅特色：</span>
+                        {{ selectedItem.note }}
+                    </div>
+                </div>
+
+                <div
+                    class="shrink-0 bg-white border-t p-4 flex gap-3 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] z-30 safe-pb">
+                    <a :href="'tel:' + selectedItem.phone"
+                        class="flex-1 flex flex-col items-center justify-center bg-gray-50 text-gray-800 py-3 rounded-xl active:bg-gray-100 transition border border-gray-100">
+                        <span class="text-lg mb-0.5">📞</span>
+                        <span class="text-[10px] font-bold">电话</span>
+                    </a>
+                    <a :href="getMapUrl(selectedItem)" target="_blank"
+                        class="flex-[2.5] flex items-center justify-center bg-[#c41e24] text-white py-3 rounded-xl font-bold shadow-lg shadow-red-100 active:bg-red-800 transition">
+                        <span class="mr-2">🗺️</span> 高德/地图导航
+                    </a>
+                </div>
+            </div>
+        </transition>
+
+        <div v-if="showFilterModal" class="fixed inset-0 bg-black/50 z-50 flex items-end"
+            @click.self="showFilterModal = false">
+            <div class="bg-white w-full rounded-t-2xl p-5 pb-10 max-h-[60vh] overflow-y-auto">
+                <h3 class="font-bold mb-4 text-gray-900 text-lg">选择{{ getFilterTitle() }}</h3>
+                <div class="grid grid-cols-3 gap-3">
+                    <button v-for="opt in currentOptions" @click="applyFilter(opt)"
+                        class="py-2.5 text-sm bg-gray-50 rounded-lg text-gray-700 font-medium active:bg-red-50 active:text-red-700 transition">
+                        {{ opt }}
+                    </button>
+                </div>
+                <button @click="showFilterModal = false"
+                    class="w-full mt-6 py-3 bg-gray-100 rounded-lg text-gray-500 text-sm">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, computed } = Vue;
+
+        // 数据源保持不变
+        const BASE_DATA = [
+            { name: "江 / Jiang by Chef Fei", district: "天河区", price: 600, phone: "020-38088885", stars: "⭐⭐", cuisine: "粤菜", note: "文华东方酒店旗舰中餐，极具创意的现代粤菜。", address: "天河区天河路389号文华东方酒店3楼", hours: "11:30-14:30, 17:30-22:00", dishes: ["亚麻籽烧鸡", "岭南黑天鹅酥", "和乐蟹蒸手打肉饼", "黑松露和牛礼物盒", "宫保明虾球", "冰烧三层肉"], isMichelin: true },
+            { name: "御宝轩", district: "天河区", price: 400, phone: "020-38856382", stars: "⭐", cuisine: "粤菜", note: "新加坡御宝集团旗下，出品极度稳定。", address: "天河区珠江新城兴民路222号天汇广场igc L5层514B", hours: "11:00-14:30, 17:30-22:00", dishes: ["御宝脆皮鸡", "糯米炸子鸡", "金网脆皮虾肠粉", "蒜片牛柳粒", "鲍汁凤爪", "菠萝包"], isMichelin: true },
+            { name: "玉堂春暖", district: "荔湾区", price: 500, phone: "020-81886968", stars: "⭐", cuisine: "粤菜", note: "白天鹅宾馆，广州粤菜的殿堂级代表。", address: "荔湾区沙面南街1号白天鹅宾馆3楼", hours: "08:00-15:00, 17:30-22:00", dishes: ["白切葵花鸡", "羊城鲜虾饺", "伊比利亚黑毛猪叉烧", "榄仁萨其马", "栗子天鹅酥", "迷你佛跳墙"], isMichelin: true },
+            { name: "丽轩", district: "天河区", price: 600, phone: "020-38136688", stars: "⭐", cuisine: "粤菜", note: "丽思卡尔顿酒店，环境服务一流。", address: "天河区兴安路3号广州富力丽思卡尔顿酒店3楼", hours: "11:30-14:00, 17:30-22:00", dishes: ["葵花鸡", "鱼子酱芙蓉蟹粉", "松露酱捞手工面", "鲜花椒蒸东星斑", "龙虾汤泡饭", "丽轩私房鱼"], isMichelin: true },
+            { name: "炳胜公馆", district: "天河区", price: 500, phone: "020-38035000", stars: "⭐", cuisine: "粤菜", note: "炳胜集团的高端线，商务宴请首选。", address: "天河区珠江新城冼村路2号首府大厦5楼", hours: "11:00-14:30, 17:00-22:00", dishes: ["首创灌汤烧鹅", "黑叉烧", "冷水猪肚", "菠萝包", "姜葱炒肉蟹", "豉油皇鹅肠"], isMichelin: true },
+            { name: "炳胜私厨", district: "天河区", price: 600, phone: "020-87575699", stars: "⭐", cuisine: "粤菜", note: "更私密的高端粤菜体验。", address: "天河区天河东路178号", hours: "11:00-14:30, 17:00-22:00", dishes: ["斗门膏蟹", "私厨三味鱼", "古法烧鹅", "拆鱼羹", "葱油鸡", "均安头菜蒸肉饼"], isMichelin: true },
+            { name: "半岛名轩 (天河北店)", district: "天河区", price: 300, phone: "020-38806868", stars: "⭐", cuisine: "粤菜", note: "传统粤菜酒家，早茶也很出色。", address: "天河区天河北路189号中国市长大厦2-3楼", hours: "08:00-14:30, 17:30-21:30", dishes: ["金牌豉油鸡", "红糖核桃包", "半岛虾饺皇", "避风塘炒蟹", "脆皮烧肉", "鲍汁凤爪"], isMichelin: true },
+            { name: "宏图府", district: "荔湾区", price: 150, phone: "020-81886968", stars: "⭐", cuisine: "点心", note: "白天鹅宾馆早茶主战场，风景极佳。", address: "荔湾区沙面南街1号白天鹅宾馆2楼", hours: "08:00-14:30 (仅早午茶)", dishes: ["羊城鲜虾饺", "酥皮叉烧包", "鲍鱼烧卖", "荔湾艇仔粥", "XO酱萝卜糕", "姜汁撞奶"], isMichelin: true },
+            { name: "宋 / Song", district: "天河区", price: 400, phone: "020-87597998", stars: "⭐", cuisine: "川菜", note: "装修极具设计感，新派精致川菜。", address: "天河区珠江新城兴民路222号igc天汇广场4层417", hours: "11:30-14:30, 17:30-22:00", dishes: ["沸腾老虎斑", "蒜泥白肉", "辣子鸡", "开水白菜", "宫保鸡丁", "北京烤鸭(需预订)"], isMichelin: true },
+            { name: "愉粤轩", district: "天河区", price: 700, phone: "020-88833371", stars: "⭐", cuisine: "粤菜", note: "四季酒店71层，云端美食。", address: "天河区珠江新城珠江西路5号广州国际金融中心四季酒店71楼", hours: "11:30-14:30, 17:30-22:00", dishes: ["冰烧三层肉", "黑松露烧鹅", "响螺汤", "鲍鱼酥", "杨枝甘露", "姜葱炒龙虾"], isMichelin: true },
+            { name: "惠食佳 (海珠店)", district: "海珠区", price: 250, phone: "020-34483322", stars: "⭐", cuisine: "啫啫煲", note: "《舌尖上的中国》推荐，啫啫煲鼻祖。企鹅指南：冠绝全城的啫啫神店。", address: "海珠区滨江西路172号", hours: "11:00-15:00, 17:00-22:30", dishes: ["啫啫黄鳝煲", "椒盐富贵虾", "皇上皇腊味煲仔饭", "啫啫大肠", "姜葱炒花蟹", "咸蛋黄酿苦瓜"], isMichelin: true },
+            { name: "广御轩", district: "天河区", price: 500, phone: "020-85106000", stars: "⭐", cuisine: "粤菜", note: "康莱德酒店，黑珍珠米其林双推。企鹅指南精致粤菜头部代表。", address: "天河区珠江新城兴民路222号康莱德酒店5楼", hours: "11:30-14:30, 17:30-22:00", dishes: ["黑松露烧鸡", "花胶汤", "脆皮有米猪", "龙虾泡饭", "至尊叉烧", "燕窝蛋挞"], isMichelin: true },
+            { name: "悦景轩", district: "天河区", price: 500, phone: "020-83961234", stars: "⭐", cuisine: "粤菜", note: "柏悦酒店，环境高雅。企鹅指南：粤西与广府味结合的精致粤菜。", address: "天河区珠江新城华夏路16号广州柏悦酒店68层", hours: "11:30-14:00, 17:30-22:00", dishes: ["鱼子酱片皮鸭", "花雕蒸蓝龙虾", "脆皮烧肉", "黑松露炒饭", "杨枝甘露", "点心拼盘"], isMichelin: true },
+            { name: "常来小聚 (高德置地店)", district: "天河区", price: 90, phone: "020-38615995", cuisine: "家常菜", note: "性价比极高的家常粤菜。", address: "天河区花城大道85号高德置地春广场4楼", hours: "11:00-14:30, 17:00-21:30", dishes: ["碌鹅", "香葱头淋鸡", "常来招牌各种煲", "酿豆腐", "咸蛋黄炒南瓜", "捞起手撕鸡"], isMichelin: true },
+            { name: "海门鱼仔店 (燕岭路店)", district: "天河区", price: 100, phone: "020-87728638", cuisine: "潮州菜", note: "食材新鲜，明档点菜。", address: "天河区燕岭路120号金燕大厦", hours: "11:00-14:30, 17:00-03:00", dishes: ["凉拌花甲", "含花甲", "糕烧双色", "卤水鹅肝", "蚝仔烙", "普宁豆干", "潮州鱼饭"], isMichelin: true },
+            { name: "蔬稻 / Soodle", district: "天河区", price: 150, phone: "020-85500688", cuisine: "素菜", note: "精致西式素食。", address: "天河区金穗路62号侨鑫国际商场3楼", hours: "11:30-14:00, 17:30-22:00", dishes: ["黑松露菌菇汤", "熔岩慢煎菇扒", "菠菜汁烩饭", "牛油果沙拉", "坚果南瓜汤", "青酱意面"], isMichelin: true },
+            { name: "和苑 (时代广场店)", district: "天河区", price: 300, phone: "020-87552222", cuisine: "粤菜", note: "老牌粤菜，服务极好。", address: "天河区天河北路28号时代广场4楼", hours: "08:00-14:30, 17:30-21:30", dishes: ["和苑虾饺皇", "杏仁炸豆腐", "舒芙蕾", "鲍汁凤爪", "脆皮叉烧", "梳乎厘"], isMichelin: true },
+            { name: "莫卡多 / Mercato", district: "天河区", price: 400, phone: "020-66818888", cuisine: "意大利菜", note: "名厨Jean-Georges旗下，K11景观位。", address: "天河区珠江东路6号K11购物艺术中心8楼", hours: "17:00-23:00 (周末有午市)", dishes: ["黑松露披萨", "龙虾意面", "提拉米苏", "香草冰淇淋", "意式生牛肉", "炸海鲜"], isMichelin: true },
+            { name: "极炙 / LJ Yakiniku", district: "天河区", price: 450, phone: "020-87515155", cuisine: "烧烤", note: "全程帮烤，肉质极佳。", address: "天河区珠江新城海风路广粤天地南门", hours: "11:30-14:00, 17:30-22:30", dishes: ["M10肉眼", "极炙顶级牛小排", "牛舌", "极上和牛拼盘", "海鲜拼盘", "牛肉石锅饭"], isMichelin: true },
+            { name: "空中1号", district: "天河区", price: 200, phone: "020-37888999", cuisine: "家常菜", note: "坐拥无敌江景。", address: "天河区珠江新城信合大厦28-31楼", hours: "08:00-14:30, 17:00-22:00", dishes: ["壹号虾饺皇", "避风塘炒蟹", "拿破仑", "原只鲍鱼酥", "烧鹅", "干炒牛河"], isMichelin: true },
+            { name: "徐博馆岭南养生菜", district: "天河区", price: 200, phone: "020-38913333", cuisine: "养生菜", note: "主打养生汤水。", address: "天河区珠江新城黄埔大道西666号", hours: "11:00-14:30, 17:00-22:00", dishes: ["陈皮老鸭汤", "养生功夫汤", "灵芝孢子粉蒸鸡", "铁棍山药", "养生黑米饭", "桃胶炖奶"], isMichelin: true },
+            { name: "闻见 / WJ Hainan", district: "天河区", price: 250, phone: "020-38816668", cuisine: "海南菜", note: "精致海南料理。", address: "天河区珠江东路6号K11购物艺术中心B1层", hours: "11:30-14:00, 17:30-21:30", dishes: ["文昌鸡", "海南粉", "糟粕醋火锅", "椰子鸡汤", "清补凉", "黄灯笼椒蒸鱼"], isMichelin: true },
+            { name: "肥豚肉骨茶", district: "天河区", price: 80, phone: "020-83337777", cuisine: "新加坡菜", note: "正宗南洋风味。", address: "越秀区文明路36号 (注:总店在越秀)", hours: "11:00-21:30", dishes: ["肉骨茶", "油条", "猪脚醋", "海南鸡饭", "咖喱鸡", "怡保白咖啡"], isMichelin: true },
+            { name: "阿睿 / A Roi", district: "越秀区", price: 40, phone: "13533550888", cuisine: "泰国菜", note: "街头泰国风味，性价比高。", address: "越秀区淘金北街5号", hours: "11:30-21:30", dishes: ["冬阴功汤", "泰式炒金边粉", "芒果糯米饭", "黄咖喱鸡", "青木瓜沙拉", "炭烧猪颈肉"], isMichelin: true },
+            { name: "创发餐厅", district: "越秀区", price: 50, phone: "020-83811235", cuisine: "镬气小炒", note: "老广饭堂，镬气十足。", address: "越秀区光孝路65号", hours: "11:00-14:30, 17:00-22:00", dishes: ["紫苏爆大肠", "真味鸡", "炸大肠", "葱油淋鸡", "蒸肉饼", "上汤桑叶"], isMichelin: true },
+            { name: "达扬原味炖品", district: "越秀区", price: 35, phone: "暂无", cuisine: "炖汤", note: "排队王，只收现金或手机支付。", address: "越秀区文明路160号", hours: "12:00-24:00", dishes: ["原只椰子炖竹丝鸡", "龟苓膏", "炖鹌鹑", "花旗参炖竹丝鸡", "淮杞炖乳鸽", "牛奶炖鸡"], isMichelin: true },
+            { name: "榕意 (越秀店)", district: "越秀区", price: 80, phone: "020-83500202", cuisine: "川菜", note: "小清新川菜，适合不能吃太辣的人。", address: "越秀区爱国路旧东山百货旁边", hours: "11:00-14:00, 17:00-21:00", dishes: ["榕意藤椒鱼", "灵魂猪油炒饭", "话梅小番茄", "口水鸡", "蒜泥白肉", "馋嘴蛙"], isMichelin: true },
+            { name: "老西关濑粉 (文明路店)", district: "越秀区", price: 20, phone: "暂无", cuisine: "粉面", note: "传统老味道。", address: "越秀区文明路216号", hours: "07:00-22:00", dishes: ["传统濑粉", "炸鱼皮", "水菱角", "斋烧鹅", "咸煎饼", "牛三星汤"], isMichelin: true },
+            { name: "天都里 / Tandoor", district: "越秀区", price: 100, phone: "020-83311666", cuisine: "印度菜", note: "老牌印度餐厅。", address: "越秀区环市东路326号亚洲国际大酒店2楼", hours: "11:00-14:30, 17:00-22:30", dishes: ["黄油鸡", "烤饼", "咖喱羊肉", "印式烩饭", "烤鱼", "酸奶"], isMichelin: true },
+            { name: "西关婆婆面 (德政中路店)", district: "越秀区", price: 25, phone: "暂无", cuisine: "粉面", note: "坚持传统竹升面。", address: "越秀区德政中路244号", hours: "09:00-20:00", dishes: ["云吞面", "牛腩面", "猪手面", "炸酱面", "净云吞", "牛腩捞面"], isMichelin: true },
+            { name: "新泰乐 (盘福路店)", district: "越秀区", price: 80, phone: "020-83332200", cuisine: "黄鳝", note: "黄鳝世家。", address: "越秀区盘福路63号", hours: "11:00-22:00", dishes: ["黄鳝啫啫煲", "老娘叉烧", "冰镇鳝片", "黄鳝饭", "啫啫田鸡", "鱼皮"], isMichelin: true },
+            { name: "北园酒家", district: "越秀区", price: 150, phone: "020-83563365", cuisine: "粤菜", note: "三大园林酒家之一，环境古色古香。", address: "越秀区小北路200-202号", hours: "08:00-14:30, 17:00-21:30", dishes: ["红米肠", "虾饺", "市师鸡", "绿茶甜薄撑", "皮蛋瘦肉粥", "鲍汁凤爪"], isMichelin: true },
+            { name: "利苑酒家 (宜安广场店)", district: "越秀区", price: 400, phone: "020-83322188", cuisine: "粤菜", note: "餐饮界的黄埔军校，出品极稳。企鹅指南：精致饮茶之选，点心教科书。", address: "越秀区建设六马路33号宜安广场4楼", hours: "11:30-15:00 / 17:30-22:00", dishes: ["冰烧三层肉", "杨枝甘露", "老火汤", "贵妃泡饭", "鲍汁凤爪", "仔鸭"], isMichelin: true },
+            { name: "桃园馆", district: "越秀区", price: 300, phone: "020-86666888", cuisine: "粤菜", note: "中国大酒店中餐厅。", address: "越秀区流花路122号中国大酒店2楼", hours: "11:00-14:30, 17:00-22:00", dishes: ["腾龙乳猪", "绣球菌浸时蔬", "虾饺", "烧卖", "咕噜肉", "扬州炒饭"], isMichelin: true },
+            { name: "香兰 / Pandan", district: "越秀区", price: 100, phone: "020-83332288", cuisine: "印尼菜", note: "极地道的印尼风味。", address: "越秀区建设六马路33号宜安广场2楼", hours: "11:00-22:00", dishes: ["巴东牛肉", "印尼炒饭", "加多加多", "沙爹肉串", "黄姜饭", "拉茶"], isMichelin: true },
+            { name: "坚记面店", district: "荔湾区", price: 30, phone: "暂无", cuisine: "粉面", note: "长寿路老字号，主打伊面。", address: "荔湾区长寿东路299号", hours: "08:00-20:00", dishes: ["炸酱伊面", "牛腩捞面", "云吞", "猪手伊面", "上汤伊面", "牛腩汤"], isMichelin: true },
+            { name: "开小灶", district: "荔湾区", price: 120, phone: "020-81258888", cuisine: "潮州菜", note: "位于永庆坊，环境雅致。", address: "荔湾区恩宁路永庆坊内", hours: "11:30-14:00, 17:30-21:00", dishes: ["生腌虾", "蚝仔烙", "狮头鹅", "潮州砂锅粥", "普宁豆干", "炒薄壳"], isMichelin: true },
+            { name: "同记鸡粥粉面", district: "荔湾区", price: 30, phone: "暂无", cuisine: "粉面", note: "深巷美食，白切鸡一绝。", address: "荔湾区长寿东路福广里3号", hours: "11:00-22:30", dishes: ["白切鸡", "鸡粥", "干炒牛河", "滑鸡粥", "炒花甲", "鱼皮"], isMichelin: true },
+            { name: "向群饭店 (龙津路总店)", district: "荔湾区", price: 80, phone: "020-81885146", cuisine: "粤菜", note: "传统粤菜，深受本地人喜爱。", address: "荔湾区龙津东路853号", hours: "11:00-14:30, 17:00-22:00", dishes: ["葱油淋鸡", "豉油皇鹅肠", "酿炸面", "碌鹅", "咸蛋黄炒南瓜", "炒菜心"], isMichelin: true },
+            { name: "西关竹园 (十八甫南路店)", district: "荔湾区", price: 30, phone: "暂无", cuisine: "粉面", note: "竹升面打卡点。", address: "荔湾区十八甫南路107号", hours: "08:00-23:00", dishes: ["蟹子云吞面", "虾子捞面", "牛腩面", "猪手面", "炸酱面", "净云吞"], isMichelin: true },
+            { name: "超记煲仔饭 (北京南路店)", district: "越秀区", price: 60, phone: "15920367208", cuisine: "煲仔饭", note: "广州煲仔饭代表之一 (注: 原仓前直街店已搬迁)", address: "越秀区北京南路星光广场", hours: "10:30-21:00", dishes: ["腊味煲仔饭", "窝蛋牛肉煲仔饭", "排骨煲仔饭", "黄鳝煲仔饭", "滑鸡煲仔饭", "枸杞猪肝汤"], isMichelin: true },
+            { name: "鹅公村", district: "荔湾区", price: 100, phone: "020-81512828", cuisine: "烧鹅", note: "芳村吃鹅专门店，场地巨大。", address: "荔湾区芳村花地大道南402-404号", hours: "08:00-14:00, 17:00-21:00", dishes: ["招牌碌鹅", "烧鹅", "鹅杂", "鹅掌翼", "罗汉斋", "鹅血汤"], isMichelin: true },
+            { name: "风味餐厅", district: "荔湾区", price: 200, phone: "020-81886968", cuisine: "综合", note: "白天鹅宾馆内，汇集大江南北风味。", address: "荔湾区沙面南街1号白天鹅宾馆3楼", hours: "08:00-21:00", dishes: ["香茅乳鸽", "兰州拉面", "刀削面", "羊肉串", "葱油饼", "山西陈醋花生"], isMichelin: true },
+            { name: "广州酒家 (文昌总店)", district: "荔湾区", price: 150, phone: "020-81380388", cuisine: "粤菜", note: "食在广州第一家。", address: "荔湾区文昌南路2号", hours: "08:00-15:00, 17:30-21:30", dishes: ["文昌鸡", "四宝炒牛奶", "百花酿鸭掌", "虾饺", "红烧乳鸽", "濑粉"], isMichelin: true },
+            { name: "泮溪酒家", district: "荔湾区", price: 120, phone: "020-81721328", cuisine: "粤菜", note: "全国最大的园林酒家。", address: "荔湾区龙津西路151号", hours: "07:00-21:00", dishes: ["绿茵白兔饺", "泮塘五秀", "烧乳猪", "艇仔粥", "马蹄糕", "咸煎饼"], isMichelin: true },
+            { name: "陶然轩", district: "荔湾区", price: 250, phone: "020-81335388", cuisine: "粤菜", note: "沙面岛上，环境极佳。", address: "荔湾区沙面南街50号", hours: "08:30-14:30, 17:30-21:30", dishes: ["陶然一品鸡", "功夫汤", "红烧乳鸽", "虾饺", "烧卖", "榴莲酥"], isMichelin: true },
+            { name: "吴财记面家", district: "荔湾区", price: 35, phone: "020-81932058", cuisine: "粉面", note: "西关大屋里吃面，炸云吞一绝。", address: "荔湾区大同路84号和隆里20号", hours: "07:00-00:30", dishes: ["炸云吞", "牛腩面", "猪手面", "怀旧锦卤炸云吞", "牛腩捞面", "净云吞"], isMichelin: true },
+            { name: "源记肠粉", district: "荔湾区", price: 20, phone: "暂无", cuisine: "肠粉", note: "华贵路老字号，只有肠粉和粥。", address: "荔湾区华贵路93号", hours: "10:00-01:30", dishes: ["牛肉肠", "艇仔粥", "鸳鸯肠", "鲜虾肠", "猪肝肠", "炸面"], isMichelin: true },
+            { name: "南园酒家", district: "海珠区", price: 130, phone: "020-84448380", cuisine: "粤菜", note: "岭南园林风格。", address: "海珠区前进路142号", hours: "08:00-21:30", dishes: ["南园虾饺皇", "顺德猪杂粥", "烧鹅", "叉烧酥", "春卷", "糯米鸡"], isMichelin: true },
+            { name: "新泰乐 (江南西店)", district: "海珠区", price: 100, phone: "020-34289886", cuisine: "黄鳝", note: "老牌黄鳝专门店。", address: "海珠区江南西路93-99号", hours: "11:00-22:00", dishes: ["黄鳝啫啫煲", "冰镇黄鳝", "老娘叉烧", "黄鳝饭", "啫啫田鸡", "上汤桑叶"], isMichelin: true },
+            { name: "啫八 / Ze 8", district: "海珠区", price: 150, phone: "020-34483688", cuisine: "啫啫煲", note: "惠食佳旗下，专门吃啫啫煲。", address: "海珠区滨江西路174号", hours: "08:00-15:00 / 17:00-23:00", dishes: ["啫啫蚝烙", "大肠啫煲", "咸蛋黄丝瓜", "啫啫黄鳝", "姜葱炒蟹", "腊味煲仔饭"], isMichelin: true },
+            { name: "炳胜品味 (海印总店)", district: "海珠区", price: 180, phone: "020-34286910", cuisine: "粤菜", note: "炳胜的发源地。", address: "海珠区东晓路33号", hours: "11:00-14:30, 17:00-22:00", dishes: ["脆皮叉烧", "豉油皇鹅肠", "菠萝包", "冷水猪肚", "姜葱炒蟹", "捞起鱼生"], isMichelin: true },
+            { name: "恰 / CHAR", district: "海珠区", price: 600, phone: "020-89178888", cuisine: "扒房", note: "广交会威斯汀酒店，专业牛排。", address: "海珠区凤浦中路681号广交会威斯汀酒店42楼", hours: "17:30-22:30", dishes: ["澳洲M9和牛", "生蚝", "战斧牛排", "蘑菇汤", "凯撒沙拉", "巧克力熔岩蛋糕"], isMichelin: true },
+            { name: "海晏楼 (滨江东总店)", district: "海珠区", price: 120, phone: "020-89053228", cuisine: "烧鹅", note: "至尊烧鹅和葱油鸡是必点。", address: "海珠区滨江东路1040号江畔华庭2楼", hours: "11:00-14:30, 17:00-21:30", dishes: ["葱油飞鱼", "至尊三宝", "白卤水鹅掌亦", "梅子碌鹅", "干炒牛河", "咸蛋黄炒南瓜"], isMichelin: true },
+            { name: "夏宫", district: "海珠区", price: 300, phone: "020-89181818", cuisine: "粤菜", note: "香格里拉大酒店中餐。", address: "海珠区会展东路1号广州香格里拉大酒店2楼", hours: "11:30-14:30, 17:30-22:00", dishes: ["片皮鸭", "响螺汤", "龙虾伊面", "虾饺", "烧卖", "杨枝甘露"], isMichelin: true },
+            { name: "明阁", district: "海珠区", price: 500, phone: "020-89163888", cuisine: "粤菜", note: "南丰朗豪酒店，出品精致。", address: "海珠区新港东路638号广州南丰朗豪酒店3楼", hours: "11:00-14:30, 17:30-22:00", dishes: ["龙皇披金甲", "明阁炸子鸡", "雪山奶黄包", "脆皮叉烧", "鲍鱼酥", "海鲜炒饭"], isMichelin: true },
+            { name: "荔雅图 / Li Château", district: "天河区", price: 300, phone: "020-85500688", cuisine: "欧陆菜", note: "环境私密，适合约会。", address: "天河区天河路228号正佳广场万豪酒店", hours: "12:00-14:30, 18:00-22:00", dishes: ["惠灵顿牛排", "煎鹅肝", "龙虾汤", "低温慢煮三文鱼", "黑松露意面", "提拉米苏"], isMichelin: true },
+            ,
+            { name: "芳村牛杂妹", district: "荔湾区", price: 15, phone: "暂无", cuisine: "牛杂", note: "清汤牛杂，骨汤派，芳村物价感人。", address: "荔湾区悦成路合兴苑南门中国银行旁", hours: "14:00-22:00", dishes: ["清汤牛杂", "牛肠", "金钱肚", "牛心顶", "牛肚边", "自制辣椒"], isMichelin: false },
+            { name: "肥记牛杂", district: "荔湾区", price: 20, phone: "暂无", cuisine: "牛杂", note: "酱汤派代表，柱侯酱风味独特。", address: "越秀区文德南路40号", hours: "11:00-23:00", dishes: ["酱汤牛杂", "牛肠", "金钱肚", "毛肚", "牛筋"], isMichelin: false },
+            { name: "紫来牛杂", district: "海珠区", price: 15, phone: "暂无", cuisine: "牛杂", note: "江南西走鬼档，经营17年。", address: "海珠区紫来大街江南大道口约100米处", hours: "08:00-20:30", dishes: ["牛肺", "牛膀", "牛肠", "金钱肚", "牛心腚", "牛筋"], isMichelin: false },
+            { name: "容意发牛杂店", district: "越秀区", price: 20, phone: "暂无", cuisine: "牛杂", note: "牛三星定点单位，药膳味浓厚。", address: "越秀区诗书路56号", hours: "08:00-20:00", dishes: ["牛三星", "牛羊杂汤", "猪油捞面"], isMichelin: false },
+            { name: "猪肠仔风味店", district: "越秀区", price: 25, phone: "暂无", cuisine: "猪杂", note: "选料精细，猪肠做得精致。", address: "越秀区海月西街8号101", hours: "06:00-18:00", dishes: ["猪肠", "大肠头", "猪杂汤"], isMichelin: false },
+            { name: "鸡什猪红", district: "越秀区", price: 15, phone: "暂无", cuisine: "鸡杂", note: "多年来以一碗鸡杂汤征服街坊。", address: "越秀区", hours: "09:30-20:00", dishes: ["鸡杂汤", "猪红", "药材汤底"], isMichelin: false },
+            { name: "泉记肠粉", district: "越秀区", price: 12, phone: "暂无", cuisine: "肠粉", note: "单屉蒸炉，米香油香豉油香。", address: "荔湾区龙津东路636号", hours: "06:00-24:00", dishes: ["鸳鸯肠", "鲜虾肠", "牛肉肠"], isMichelin: false },
+            { name: "华记石磨肠粉", district: "越秀区", price: 12, phone: "暂无", cuisine: "肠粉", note: "城中少有的石磨肠粉。", address: "越秀区", hours: "07:00-14:00", dishes: ["石磨肠粉", "辣椒圈肠粉"], isMichelin: false },
+            { name: "炜明肠粉", district: "越秀区", price: 10, phone: "暂无", cuisine: "肠粉", note: "单层铁皮抽屉式蒸炉，老广名店。", address: "荔湾区中山七路紫贵坊15号", hours: "06:00-14:00", dishes: ["虾米葱花肠", "炸面肠", "鸳鸯肠"], isMichelin: false },
+            { name: "水养石磨肠粉", district: "荔湾区", price: 8, phone: "暂无", cuisine: "肠粉", note: "芳村石磨肠粉，米香特别足。", address: "荔湾区花蕾路中市百合园市场西街19号", hours: "05:30-14:00", dishes: ["肉碎肠", "牛肉肠", "鲜虾肠"], isMichelin: false },
+            { name: "六记肠粉", district: "荔湾区", price: 10, phone: "暂无", cuisine: "肠粉", note: "厚米浆派代表，龙津东路。", address: "荔湾区龙津东路653号首层", hours: "06:30-02:30", dishes: ["三鲜肠粉", "牛肉肠", "鲜虾肠"], isMichelin: false },
+            { name: "天璞炖汤", district: "越秀区", price: 25, phone: "暂无", cuisine: "炖汤", note: "大碗多样且细节不俗。", address: "越秀区东华东路643号（自编627号）", hours: "10:00-21:00", dishes: ["百合雪梨瘦肉汁", "石斛炖老鸡", "川弓天麻炖猪肚"], isMichelin: false },
+            { name: "信行丰炖品皇", district: "越秀区", price: 25, phone: "暂无", cuisine: "炖汤", note: "每日近50款炖汤可选。", address: "越秀区光孝路65号", hours: "10:30-21:30", dishes: ["椰子炖竹丝鸡", "花旗参炖竹丝鸡", "老火汤"], isMichelin: false },
+            { name: "喜加多炖品", district: "海珠区", price: 30, phone: "暂无", cuisine: "炖汤", note: "江南西炖汤老大。", address: "海珠区紫金大街38号101铺", hours: "11:00-22:00", dishes: ["原只椰子炖竹丝鸡", "菜干南北杏脊骨", "煲仔饭"], isMichelin: false },
+            { name: "上膳汤水", district: "越秀区", price: 40, phone: "暂无", cuisine: "炖汤", note: "进阶版炖汤，选材上乘。", address: "海珠区滨江东路152号103铺", hours: "11:00-14:00 / 17:00-21:00", dishes: ["雪梨炖响螺片", "老龟炖汤", "时令汤品"], isMichelin: false },
+            { name: "茹意竹升面", district: "荔湾区", price: 25, phone: "暂无", cuisine: "粉面", note: "细节出色的老字号竹升面。", address: "越秀区东华东路666号", hours: "07:30-20:00", dishes: ["土猪油捞面", "虾子面", "粗面", "云吞面"], isMichelin: false },
+            { name: "恩宁刘福记", district: "越秀区", price: 20, phone: "暂无", cuisine: "粉面", note: "推荐最多的广府面代表。", address: "越秀区东华东路547号", hours: "08:00-21:00", dishes: ["猪油拌面", "炸酱面", "云吞面"], isMichelin: false },
+            { name: "虾籽记", district: "荔湾区", price: 25, phone: "暂无", cuisine: "粉面", note: "游客区里难得的黑马，永庆坊。", address: "荔湾区恩宁路86号", hours: "08:00-21:00", dishes: ["鲜虾云吞面", "虾子捞面", "鲜肉云吞面"], isMichelin: false },
+            { name: "雄记", district: "荔湾区", price: 20, phone: "暂无", cuisine: "粉面", note: "纯蛋清面独特，老板亲自压面。", address: "荔湾区芳村大道西103号", hours: "07:00-15:00", dishes: ["纯蛋清面", "全蛋面", "云吞纯蛋清面"], isMichelin: false },
+            { name: "一品为先食得好", district: "越秀区", price: 25, phone: "暂无", cuisine: "粉面", note: "老广从小吃到大的粉丝店。", address: "荔湾区和安街67号", hours: "11:00-20:00", dishes: ["杂锦粉丝", "瑞士鸡翼"], isMichelin: false },
+            { name: "文记河粉", district: "越秀区", price: 15, phone: "暂无", cuisine: "粉面", note: "市区最好的窝篮河粉。", address: "荔湾区西华路418号金平大厦1153铺", hours: "08:00-14:00", dishes: ["豉油王捞粉", "牛腩捞粉"], isMichelin: false },
+            { name: "多喜小食店", district: "荔湾区", price: 15, phone: "暂无", cuisine: "粉面", note: "沙面市场，镬气炒猪肝面。", address: "海珠区西华直街1号", hours: "05:00-16:00", dishes: ["炒猪肝面", "牛腩猪肠粉", "猪红汤"], isMichelin: false },
+            { name: "合兴小食店", district: "荔湾区", price: 8, phone: "暂无", cuisine: "粉面", note: "四代人坚守，5蚊濑粉。", address: "荔湾区西华路第一津街44号", hours: "07:00-19:00", dishes: ["濑粉", "猪油渣濑粉"], isMichelin: false },
+            { name: "牛坤大鼎牛肉粿条面", district: "天河区", price: 40, phone: "暂无", cuisine: "潮州菜", note: "地道程度不输潮汕的牛肉粿条。", address: "天河区", hours: "11:00-22:00", dishes: ["吊龙粿条", "五花趾", "胸口油", "牛肉丸"], isMichelin: false },
+            { name: "两味煲仔饭", district: "越秀区", price: 50, phone: "暂无", cuisine: "煲仔饭", note: "煲仔饭界境界之选，反复回访最多。", address: "广州荔湾区金花街道龙津中路597号103房", hours: "11:00-14:00 / 17:30-20:00", dishes: ["鲩鱼腩煲仔饭", "四宝煲仔饭", "咸鱼花肉煲仔饭"], isMichelin: false },
+            { name: "香港庙街煲仔饭", district: "越秀区", price: 45, phone: "暂无", cuisine: "煲仔饭", note: "创新派煲仔饭前段选手。", address: "广州珠光街道东堤二马路10号", hours: "10:30-14:00 / 16:30-21:00", dishes: ["紫苏牛肉饭", "川椒滑鸡煲仔饭"], isMichelin: false },
+            { name: "囍和煲仔饭", district: "越秀区", price: 40, phone: "暂无", cuisine: "煲仔饭", note: "创新与传统都不错，营业时间长。", address: "广州海珠区江南大道南399号", hours: "11:00-20:30", dishes: ["瑞士鸡翼叉烧煲仔饭", "炖汤", "腊味煲仔饭"], isMichelin: false },
+            { name: "汶记美食店", district: "越秀区", price: 30, phone: "暂无", cuisine: "煲仔饭", note: "砵仔饭神级选手，自制烧味。", address: "荔湾区宝源路113号", hours: "11:00-14:30 / 17:00-20:30", dishes: ["肥叉砵仔饭", "酿辣椒砵仔饭"], isMichelin: false },
+            { name: "猪脚强碳炉夜猪脚", district: "天河区", price: 35, phone: "暂无", cuisine: "猪脚", note: "碳火煮卤水，开到凌晨4点。", address: "广州白云区乐嘉路宏景街9号", hours: "11:00-04:00", dishes: ["卤猪脚", "猪脚饭"], isMichelin: false },
+            { name: "永兴烧腊", district: "越秀区", price: 50, phone: "暂无", cuisine: "烧味", note: "开业40年，烧鹅接近完美。", address: "荔湾区梯云东路21-4号", hours: "10:45-13:30 / 16:30-18:30", dishes: ["烧鹅", "鹅髀", "烧肉"], isMichelin: false },
+            { name: "喜喜豉油鸡专门店", district: "越秀区", price: 40, phone: "暂无", cuisine: "烧味", note: "豉油鸡首选店。", address: "德政中路230号", hours: "08:00-18:00", dishes: ["豉油鸡", "特调老抽蘸酱"], isMichelin: false },
+            { name: "胜记万利烧腊店", district: "越秀区", price: 45, phone: "暂无", cuisine: "烧味", note: "手撕鸡技术型选手，覆盖全省靓鸡。", address: "越秀区珠光路25号", hours: "08:30-14:00 / 15:30-19:30", dishes: ["湛江鸡", "杏花鸡", "阳山鸡", "秘制手撕鸡"], isMichelin: false },
+            { name: "森成美食店", district: "越秀区", price: 50, phone: "暂无", cuisine: "烧味", note: "烧肉心里第一。", address: "海珠区南华西路73号", hours: "10:00-14:00 / 16:00-20:30", dishes: ["爆皮烧肉", "烧鹅", "叉烧"], isMichelin: false },
+            { name: "同福·尚品轩", district: "海珠区", price: 200, phone: "暂无", cuisine: "粤菜", note: "常吃常新的富豪饭堂，选料精味道正。", address: "天河区海明路20号104房", hours: "17:30-02:00", dishes: ["芫荽炒鹅肝鹅肠", "葵园烧鸡", "椒麻狮头鹅掌翼煲", "香煎台山金蚝"], isMichelin: false },
+            { name: "信记海鲜饭店", district: "荔湾区", price: 150, phone: "暂无", cuisine: "海鲜", note: "长年霸榜，功力老道。", address: "越秀区长堤大马路270号", hours: "11:00-15:00 / 17:00-22:00", dishes: ["煎封多宝鱼", "姜葱炒蟹", "泥鯭粥", "丁香鱼煲仔饭", "南乳肉"], isMichelin: false },
+            { name: "佬佬餐厅", district: "番禺区", price: 200, phone: "暂无", cuisine: "粤菜", note: "番禺深藏，厉害菜层出不穷。", address: "广州市番禺区西环路1185号", hours: "17:30-22:30", dishes: ["炒牛河", "碌鸽", "腊味煲仔饭", "无水蒸汽鸡汁"], isMichelin: false },
+            { name: "华福五宝", district: "越秀区", price: 80, phone: "暂无", cuisine: "粤菜", note: "主厨都夸的低调餐厅。", address: "荔湾区中山七路333号扬韬广场10号工坊二楼215铺", hours: "11:00-21:30", dishes: ["萝卜牛杂", "花菇面", "杏汁白肺汤", "蚬蚧炒牛肉"], isMichelin: false },
+            { name: "南围村大排档", district: "番禺区", price: 100, phone: "暂无", cuisine: "大排档", note: "独步全城老火汤，蜂窝煤慢炖。", address: "荔湾区花地大道南坑口南围村18-19号", hours: "11:00-14:00 / 17:30-21:00", dishes: ["老火汤", "油浸笋壳鱼", "卤水肠头", "豉油鸡"], isMichelin: false },
+            { name: "腰记饭店", district: "番禺区", price: 200, phone: "暂无", cuisine: "水乡菜", note: "水乡菜老行尊，营业超40年。", address: "番禺区化龙镇龙源路15号", hours: "11:30-13:30 / 17:30-20:30", dishes: ["礼云子", "禾虫", "泥虾蒸龙脷", "面豉酱", "绿豆糯米酿大肠"], isMichelin: false },
+            { name: "花城苑", district: "天河区", price: 200, phone: "暂无", cuisine: "粤菜", note: "点心水平有高光期白天鹅水准。", address: "天河区临江大道海心沙岛东区2号楼", hours: "11:00-14:30 / 17:00-22:00", dishes: ["鲜虾肠", "化皮鸡蛋挞", "水牛奶蛋挞", "虾饺"], isMichelin: false },
+            { name: "悦满堂", district: "越秀区", price: 80, phone: "暂无", cuisine: "粤菜", note: "利苑平替，全手工制作点心。", address: "越秀区环市东路326号亚洲国际大酒店五楼", hours: "10:30-15:00 / 17:00-22:30 (周一至五) 09:00-15:00 / 17:00-22:30 (周六日)", dishes: ["虾饺", "叉烧包", "银萝千层酥", "咸水角", "菜胆云吞鸡"], isMichelin: false },
+            { name: "头家夜粥", district: "天河区", price: 200, phone: "暂无", cuisine: "潮州菜", note: "米其林入选，潮汕宵夜好店。", address: "天河区猎德西浦大街猎人坊9栋", hours: "17:30-02:00", dishes: ["炒牛肉粿条", "剥皮牛鱼生", "生腌", "炸鸟腿"], isMichelin: false },
+            { name: "够姜大排档", district: "天河区", price: 100, phone: "暂无", cuisine: "大排档", note: "名厨食堂，清远食材专家。", address: "广州天河区七客创悦湾", hours: "11:00-14:00 / 17:00-01:00", dishes: ["清远鸡", "北江鱼鲜", "清远青头鸭", "清远腊味"], isMichelin: false },
+            { name: "联丰美食", district: "番禺区", price: 60, phone: "暂无", cuisine: "猪杂", note: "深夜限定猪杂粥，番禺屠场旁。", address: "番禺区青萝路与新沙渡街交叉口东北角", hours: "17:30-02:00", dishes: ["猪杂粥", "现拉猪杂肠粉", "豉汁蒸猪软骨"], isMichelin: false },
+            { name: "梅麓小厨", district: "天河区", price: 40, phone: "暂无", cuisine: "粤西菜", note: "难得在广州找到的标准粤西小食。", address: "海珠区南石头街道越秀·星汇海珠湾E区E4-101铺", hours: "11:30-14:30 / 17:30-20:30", dishes: ["白切鸡", "白切牛腩", "粤西汤粉", "吴川手工粉皮"], isMichelin: false },
+            { name: "富鸽天下", district: "天河区", price: 120, phone: "暂无", cuisine: "乳鸽", note: "鸽子界懂王,30+种吃法。", address: "海珠区星晖三街8号1-2层星晖园会所", hours: "11:00-14:00 / 17:00-21:00", dishes: ["豉油皇乳鸽", "鸽丝焗饭", "猪肚煲乳鸽"], isMichelin: false },
+            { name: "顺德松记食店", district: "海珠区", price: 150, phone: "暂无", cuisine: "清水火锅", note: "南派火锅门面，屹立三十余年。", address: "荔湾区荣芳街罗冲岗3号安华产业园门口左侧", hours: "11:30-14:00 / 17:30-21:30", dishes: ["竹肠", "牛脷坑", "牛杂拼盘", "猪杂拼盘"], isMichelin: false },
+            { name: "高佬金牌羊肉煲", district: "越秀区", price: 100, phone: "暂无", cuisine: "羊肉煲", note: "羊腩煲界老艺术家。", address: "海珠区南华中路?", hours: "17:30-02:00", dishes: ["羊腩煲", "羊杂"], isMichelin: false },
+            { name: "丰和羊庄", district: "荔湾区", price: 100, phone: "暂无", cuisine: "羊肉煲", note: "清汤派代表，当日宰杀鲜肉。", address: "荔湾区芳村大道南5号之一", hours: "11:00-21:00", dishes: ["鲜羊肉", "羊腩", "鲜羊肉丸", "羊骨筒"], isMichelin: false },
+            { name: "百家熟食店", district: "越秀区", price: 120, phone: "暂无", cuisine: "羊肉煲", note: "老字号，传统炭炉火锅。", address: "越秀区大新路339号", hours: "17:30-02:00", dishes: ["东山羊羊腩煲", "清远鸡煲"], isMichelin: false },
+            { name: "光明清汤羊", district: "越秀区", price: 80, phone: "暂无", cuisine: "羊肉煲", note: "市区清汤派羊腩煲老店。", address: "海珠区南华中路295号108铺", hours: "10:00-14:30 / 17:00-24:00", dishes: ["清汤羊腩煲"], isMichelin: false },
+            { name: "沙湾姜埋奶", district: "荔湾区", price: 20, phone: "暂无", cuisine: "糖水", note: "传统糖水铺优等生，龙津东路733号。", address: "荔湾区龙津东路733号", hours: "14:00-23:00", dishes: ["泮塘马蹄沙", "椰汁马蹄沙", "凤凰奶糊", "双皮奶", "姜撞奶"], isMichelin: false },
+            { name: "耕田公", district: "越秀区", price: 25, phone: "暂无", cuisine: "糖水", note: "百年小店，专注猪脚姜。", address: "海珠区洪德路56号", hours: "08:00-22:00", dishes: ["猪脚姜加蛋"], isMichelin: false },
+            { name: "千年豆膳", district: "海珠区", price: 10, phone: "暂无", cuisine: "豆花", note: "豆制品专门店，自制豆腐花。", address: "荔湾区金花直街金平大厦A座1057", hours: "07:00-19:00", dishes: ["姜汁豆花", "红糖豆花"], isMichelin: false },
+            { name: "清心鸡蛋挞皇", district: "越秀区", price: 8, phone: "暂无", cuisine: "糕饼", note: "64层酥皮蛋挞，全城首选。", address: "越秀区寺右新马路170号1层61B号铺", hours: "08:00-18:00", dishes: ["酥皮蛋挞"], isMichelin: false },
+            { name: "诚诚恳恳鸡蛋仔", district: "越秀区", price: 20, phone: "暂无", cuisine: "糕饼", note: "4种蛋浆，软硬焦脆可调。", address: "荔湾区金花街道西华路418号金平大厦门口", hours: "11:00-16:30", dishes: ["原味鸡蛋仔", "咸芝士鸡蛋仔", "抹茶鸡蛋仔"], isMichelin: false },
+            { name: "步步糕昇钵仔糕", district: "荔湾区", price: 5, phone: "暂无", cuisine: "糕饼", note: "传统台山钵仔糕，木薯粉。", address: "越秀区仙湖路44号地铺", hours: "11:00-16:30", dishes: ["传统钵仔糕", "斑斓钵仔糕", "陈皮钵仔糕"], isMichelin: false },
+            { name: "明华饼店", district: "越秀区", price: 10, phone: "暂无", cuisine: "糕饼", note: "综合评分最高糕饼铺。", address: "越秀区起义路78号", hours: "10:00-23:00", dishes: ["鸡仔饼", "蛋挞", "葡挞", "杏仁酥"], isMichelin: false },
+            { name: "梨村茶铺", district: "荔湾区", price: 18, phone: "暂无", cuisine: "茶饮", note: "本土茶饮优秀代表，芳村。", address: "荔湾区鹤洞路12号LYKPARK鹤洞新天地B201铺", hours: "10:00-22:00", dishes: ["现榨老椰龙眼冰", "秋柚海盐菠萝冰", "鲜酪奶茶"], isMichelin: false },
+            { name: "蛋卷王", district: "越秀区", price: 15, phone: "暂无", cuisine: "手信", note: "现烤蛋卷，26元一斤。", address: "荔湾区龙津东路驿巷25号", hours: "09:00-21:00", dishes: ["原味蛋卷", "合桃酥", "杏仁酥"], isMichelin: false }
+        ];
+
+
+        const DISTRICT_CENTERS = {
+            "天河区": { lat: 23.135, lng: 113.328 },
+            "越秀区": { lat: 23.130, lng: 113.265 },
+            "荔湾区": { lat: 23.120, lng: 113.240 },
+            "海珠区": { lat: 23.095, lng: 113.285 },
+            "番禺区": { lat: 23.000, lng: 113.350 }
+        };
+
+        createApp({
+            setup() {
+                const list = ref(BASE_DATA.map(item => {
+                    const center = DISTRICT_CENTERS[item.district] || DISTRICT_CENTERS["越秀区"];
+                    return {
+                        ...item,
+                        lat: center.lat + (Math.random() - 0.5) * 0.03,
+                        lng: center.lng + (Math.random() - 0.5) * 0.03
+                    };
+                }));
+
+                const selectedItem = ref(null);
+                const searchQuery = ref("");
+                const filterDistrict = ref("");
+                const filterCuisine = ref("");
+                const filterTimeCategory = ref("");
+                const showFilterModal = ref(false);
+                const filterType = ref("district");
+                // types: 'district', 'cuisine', 'time'
+                const loadingLocation = ref(false);
+                const filterMichelin = ref(false);
+                const filterOpenNow = ref(false);
+                const userLocation = ref(null);
+
+                const openDetail = (item) => selectedItem.value = item;
+                const closeDetail = () => selectedItem.value = null;
+
+                const uniqueDistricts = [...new Set(list.value.map(i => i.district))].filter(Boolean);
+                const uniqueCuisines = [...new Set(list.value.map(i => i.cuisine))].filter(Boolean);
+
+
+                const timeOptions = ["早餐", "午餐", "下午茶", "晚餐", "宵夜"];
+
+                const currentOptions = computed(() => {
+                    if (filterType.value === 'district') return uniqueDistricts;
+                    if (filterType.value === 'cuisine') return uniqueCuisines;
+                    if (filterType.value === 'time') return timeOptions;
+                    return [];
+                });
+                const hasFilters = computed(() => filterDistrict.value || filterCuisine.value || filterTimeCategory.value || filterMichelin.value || filterOpenNow.value);
+
+                const toggleFilter = (type) => {
+                    filterType.value = type;
+                    showFilterModal.value = true;
+                };
+
+                const applyFilter = (val) => {
+                    if (filterType.value === 'district') filterDistrict.value = val;
+                    else if (filterType.value === 'cuisine') filterCuisine.value = val;
+                    else if (filterType.value === 'time') filterTimeCategory.value = val;
+                    showFilterModal.value = false;
+                };
+
+                const getFilterTitle = () => {
+                    if (filterType.value === 'district') return '区域';
+                    if (filterType.value === 'cuisine') return '菜系';
+                    if (filterType.value === 'time') return '用餐时段';
+                    return '';
+                };
+
+                const toggleMichelin = () => {
+                    filterMichelin.value = !filterMichelin.value;
+                };
+
+                const toggleOpenNow = () => {
+                    filterOpenNow.value = !filterOpenNow.value;
+                };
+
+                const resetFilters = () => {
+                    filterDistrict.value = "";
+                    filterCuisine.value = "";
+                    filterTimeCategory.value = "";
+                    filterMichelin.value = false;
+                    filterOpenNow.value = false;
+                };
+
+                const checkIsOpen = (hoursStr) => {
+                    if (!hoursStr || hoursStr === "暂无") return false;
+                    const now = new Date();
+                    const day = now.getDay(); // 0 is Sunday
+                    const nowMin = now.getHours() * 60 + now.getMinutes();
+                    const normalized = hoursStr.replace(/：/g, ':').replace(/—/g, '-').replace(/，/g, ',');
+                    const segments = normalized.split(/[,/]/);
+
+                    for (let seg of segments) {
+                        seg = seg.trim();
+                        if (!seg) continue;
+                        let allowedToday = true;
+                        if (seg.includes("周一至五") || seg.includes("周一至周五")) {
+                            if (day === 0 || day === 6) allowedToday = false;
+                        } else if (seg.includes("周六日") || seg.includes("周末")) {
+                            if (day >= 1 && day <= 5) allowedToday = false;
+                        }
+                        if (!allowedToday) continue;
+
+                        const timeMatches = [...seg.matchAll(/(\d{1,2}:\d{2})/g)];
+                        if (timeMatches.length >= 2) {
+                            for (let i = 0; i < timeMatches.length; i += 2) {
+                                if (i + 1 >= timeMatches.length) break;
+                                const [sh, sm] = timeMatches[i][0].split(':').map(Number);
+                                const [eh, em] = timeMatches[i + 1][0].split(':').map(Number);
+                                const startMin = sh * 60 + sm;
+                                const endMin = eh * 60 + em;
+
+                                if (endMin < startMin) {
+                                    if (nowMin >= startMin || nowMin < endMin) return true;
+                                } else {
+                                    if (nowMin >= startMin && nowMin < endMin) return true;
+                                }
+                            }
+                        }
+                    }
+                    return false;
+                };
+
+                const TIME_CATEGORIES = {
+                    "早餐": [[360, 690]], // 06:00-11:30
+                    "午餐": [[690, 840]], // 11:30-14:00
+                    "下午茶": [[840, 1050]], // 14:00-17:30
+                    "晚餐": [[1050, 1350]], // 17:30-22:30
+                    "宵夜": [[1350, 1440], [0, 180]] // 22:30-03:00
+                };
+
+                const checkTimeCategory = (hoursStr, category) => {
+                    if (!hoursStr || hoursStr === "暂无") return false;
+                    const ranges = TIME_CATEGORIES[category];
+                    if (!ranges) return true;
+
+                    const normalized = hoursStr.replace(/：/g, ':').replace(/—/g, '-').replace(/，/g, ',');
+                    const segments = normalized.split(/[,/]/);
+                    const restIntervals = [];
+
+                    for (let seg of segments) {
+                        seg = seg.trim();
+                        if (!seg) continue;
+                        const timeMatches = [...seg.matchAll(/(\d{1,2}:\d{2})/g)];
+                        if (timeMatches.length >= 2) {
+                            for (let i = 0; i < timeMatches.length; i += 2) {
+                                if (i + 1 >= timeMatches.length) break;
+                                const [sh, sm] = timeMatches[i][0].split(':').map(Number);
+                                const [eh, em] = timeMatches[i + 1][0].split(':').map(Number);
+                                const sMin = sh * 60 + sm;
+                                const eMin = eh * 60 + em;
+
+                                if (eMin < sMin) { // Cross midnight
+                                    restIntervals.push([sMin, 1440]);
+                                    restIntervals.push([0, eMin]);
+                                } else {
+                                    restIntervals.push([sMin, eMin]);
+                                }
+                            }
+                        }
+                    }
+
+                    for (let rInt of restIntervals) {
+                        for (let cInt of ranges) {
+                            const overlapStart = Math.max(rInt[0], cInt[0]);
+                            const overlapEnd = Math.min(rInt[1], cInt[1]);
+                            if (overlapStart < overlapEnd) return true;
+                        }
+                    }
+                    return false;
+                };
+
+                const filteredList = computed(() => {
+                    return list.value.filter(item => {
+                        const matchSearch = !searchQuery.value ||
+                            item.name.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
+                            item.cuisine.includes(searchQuery.value) ||
+                            (item.address && item.address.includes(searchQuery.value)) ||
+                            (item.dishes && item.dishes.some(d => d.includes(searchQuery.value)));
+                        const matchDist = !filterDistrict.value || item.district === filterDistrict.value;
+                        const matchCui = !filterCuisine.value || item.cuisine === filterCuisine.value;
+                        const matchMichelin = !filterMichelin.value || item.isMichelin;
+                        const matchOpen = !filterOpenNow.value || checkIsOpen(item.hours);
+                        const matchTimeCat = !filterTimeCategory.value || checkTimeCategory(item.hours, filterTimeCategory.value);
+                        return matchSearch && matchDist && matchCui && matchMichelin && matchOpen && matchTimeCat;
+                    });
+                });
+
+                const calculateDistance = (lat1, lon1, lat2, lon2) => {
+                    const R = 6371;
+                    const dLat = (lat2 - lat1) * Math.PI / 180;
+                    const dLon = (lon2 - lon1) * Math.PI / 180;
+                    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                    return (R * c).toFixed(1);
+                };
+
+                const getLocation = () => {
+                    loadingLocation.value = true;
+                    if (navigator.geolocation) {
+                        navigator.geolocation.getCurrentPosition(
+                            (position) => {
+                                userLocation.value = { lat: position.coords.latitude, lng: position.coords.longitude };
+                                list.value.sort((a, b) => {
+                                    const distA = calculateDistance(userLocation.value.lat, userLocation.value.lng, a.lat, a.lng);
+                                    const distB = calculateDistance(userLocation.value.lat, userLocation.value.lng, b.lat, b.lng);
+                                    a.distance = distA;
+                                    b.distance = distB;
+                                    return distA - distB;
+                                });
+                                loadingLocation.value = false;
+                            },
+                            () => { loadingLocation.value = false; alert("无法获取位置权限，请检查手机设置。"); }
+                        );
+                    } else {
+                        alert("浏览器不支持定位");
+                    }
+                };
+
+                // 核心修复：导航改为搜索「店名」而非「地址」，并优化高德唤起参数
+                const getMapUrl = (item) => {
+                    // 去除店名中的括号备注，提高搜索成功率 (如 "榕意 (越秀店)" -> "榕意 越秀店")
+                    const cleanName = item.name.replace(/[()]/g, ' ');
+                    const query = `广州 ${cleanName}`;
+                    // 使用 callnative=1 尝试唤起 App
+                    return `https://uri.amap.com/search?keyword=${encodeURIComponent(query)}&src=mypage&callnative=1`;
+                };
+
+                return {
+                    list, selectedItem, searchQuery, filterDistrict, filterCuisine,
+                    showFilterModal, filterType, currentOptions, hasFilters, filteredList,
+                    loadingLocation, filterMichelin, filterOpenNow, filterTimeCategory,
+                    openDetail, closeDetail, toggleFilter, applyFilter, resetFilters, toggleMichelin, toggleOpenNow, getLocation, getMapUrl, getFilterTitle
+                };
+            },
+            mounted() {
+                this.getLocation();
+            }
+        }).mount('#app');
+    </script>
+
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').catch(() => {});
+        }
+    </script>
+</body>
+
+</html>
